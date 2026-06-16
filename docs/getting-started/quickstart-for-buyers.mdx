@@ -172,6 +172,21 @@ const stellarSigner = createEd25519Signer(
 );
 ```
 
+#### TON (TVM)
+
+Use the `@x402/tvm` package to instantiate a signer. Requires a W5R1 wallet:
+
+```typescript
+import { toClientTvmSigner } from "@x402/tvm";
+import { mnemonicToPrivateKey } from "@ton/crypto";
+
+const keyPair = await mnemonicToPrivateKey(process.env.TON_MNEMONIC!.split(" "));
+const tvmSigner = toClientTvmSigner(keyPair, {
+  network: "tvm:-239",  // mainnet; use "tvm:-3" for testnet
+  apiKey: process.env.TONCENTER_API_KEY,
+});
+```
+
 #### Keeta
 
 Use the Keeta SDK to instantiate a signer:
