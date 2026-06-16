@@ -199,6 +199,77 @@ Use `exact` when the final charge is known before the response is generated, suc
   </Tab>
 </Tabs>
 
+### TVM (TON) Setup
+
+The `@x402/tvm` package provides the TON mechanism for the `exact` scheme. Clients sign W5R1 `internal_signed` Jetton transfers; the facilitator relays them through a Highload V3 wallet while sponsoring TON gas.
+
+#### Server
+
+```typescript
+import { x402ResourceServer } from "@x402/core/server";
+import { ExactTvmScheme } from "@x402/tvm/exact/server";
+
+const server = new x402ResourceServer(facilitatorClient);
+server.register("tvm:*", new ExactTvmScheme());
+```
+
+#### Client
+
+```typescript
+import { x402Client } from "@x402/core/client";
+import { ExactTvmScheme } from "@x402/tvm/exact/client";
+import { toClientTvmSigner } from "@x402/tvm";
+import { mnemonicToPrivateKey } from "@ton/crypto";
+
+const keyPair = await mnemonicToPrivateKey(process.env.TON_MNEMONIC!.split(" "));
+const signer = toClientTvmSigner(keyPair, {
+  network: "tvm:-239",
+  apiKey: process.env.TONCENTER_API_KEY,
+});
+
+const client = new x402Client();
+client.register("tvm:*", new ExactTvmScheme(signer));
+```
+
+#### Facilitator
+
+```typescript
+import { x402Facilitator } from "@x402/core/facilitator";
+import { ExactTvmScheme } from "@x402/tvm/exact/facilitator";
+import { HighloadV3Config, toFacilitatorTvmSigner } from "@x402/tvm";
+
+const signer = toFacilitatorTvmSigner({
+  "tvm:-239": HighloadV3Config.fromPrivateKey(process.env.TVM_PRIVATE_KEY!, {
+    provider: "toncenter",
+    apiKey: process.env.TONCENTER_API_KEY,
+  }),
+});
+
+const facilitator = new x402Facilitator();
+facilitator.register("tvm:-239", new ExactTvmScheme(signer));
+```
+
+The facilitator wallet must be a Highload V3 wallet and hold at least 1.1 TON before processing payments. Call `scheme.close()` when done with a long-lived client scheme to release cached provider clients.
+
+#### Provider Selection
+
+Toncenter is the default provider. Set `provider: TVM_PROVIDER_TONAPI` to switch to TonAPI:
+
+```typescript
+import { toClientTvmSigner, TVM_PROVIDER_TONAPI } from "@x402/tvm";
+
+const signer = toClientTvmSigner(keyPair, {
+  network: "tvm:-239",
+  provider: TVM_PROVIDER_TONAPI,
+  apiKey: process.env.TONAPI_API_KEY,
+});
+```
+
+| Provider | Mainnet Base URL | Testnet Base URL |
+|----------|-----------------|-----------------|
+| Toncenter (default) | `https://toncenter.com` | `https://testnet.toncenter.com` |
+| TonAPI | `https://tonapi.io` | `https://testnet.tonapi.io` |
+
 ### Network Implementations
 
 The `exact` scheme has network specifications for EVM, SVM, AVM, Stellar, Aptos, Hedera, TON, Cardano, Keeta, and Sui.
