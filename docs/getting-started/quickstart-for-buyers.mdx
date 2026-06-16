@@ -477,6 +477,18 @@ You can register multiple payment schemes to handle different networks:
     );
     client.register("stellar:*", new ExactStellarScheme(stellarSigner));
 
+    // For TON (TVM) support, also add:
+    import { ExactTvmScheme } from "@x402/tvm/exact/client";
+    import { toClientTvmSigner } from "@x402/tvm";
+    import { mnemonicToPrivateKey } from "@ton/crypto";
+
+    const tvmKeyPair = await mnemonicToPrivateKey(process.env.TON_MNEMONIC!.split(" "));
+    const tvmSigner = toClientTvmSigner(tvmKeyPair, {
+      network: "tvm:-239",
+      apiKey: process.env.TONCENTER_API_KEY,
+    });
+    client.register("tvm:*", new ExactTvmScheme(tvmSigner));
+
     // For Keeta support, also add:
     import * as KeetaNet from "@keetanetwork/keetanet-client";
     import { ExactKeetaScheme, toClientKeetaSigner } from "@x402/keeta";
