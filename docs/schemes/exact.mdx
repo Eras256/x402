@@ -203,6 +203,56 @@ Use `exact` when the final charge is known before the response is generated, suc
 
 The `exact` scheme has network specifications for EVM, SVM, AVM, Stellar, Aptos, Hedera, TON, Cardano, Keeta, Sui, Concordium, and NEAR.
 
+### Hedera Facilitator Setup
+
+When running a facilitator for Hedera, you must provide a `FacilitatorHederaSigner` with all required methods wired. Use the built-in helpers from `@x402/hedera`:
+
+```typescript
+import {
+  AccountId,
+  Client,
+  PrivateKey,
+  createHederaClient,
+  createHederaPreflightTransfer,
+  createHederaSignAndSubmitTransaction,
+  createHederaVerifyPayerSignature,
+  toFacilitatorHederaSigner,
+} from "@x402/hedera";
+import { ExactHederaScheme } from "@x402/hedera/exact/facilitator";
+
+const hederaKey = PrivateKey.fromStringECDSA(process.env.HEDERA_PRIVATE_KEY!);
+const hederaAccountId = process.env.HEDERA_ACCOUNT_ID!;
+
+const buildHederaClient = (network: string): Client => {
+  const client = createHederaClient(network);
+  client.setOperator(AccountId.fromString(hederaAccountId), hederaKey);
+  return client;
+};
+
+const hederaSigner = toFacilitatorHederaSigner({
+  getAddresses: () => [hederaAccountId],
+  signAndSubmitTransaction: createHederaSignAndSubmitTransaction(
+    buildHederaClient,
+    hederaKey,
+  ),
+  verifyPayerSignature: createHederaVerifyPayerSignature(),
+  preflightTransfer: createHederaPreflightTransfer(),
+});
+
+facilitator.register("hedera:testnet", new ExactHederaScheme(hederaSigner));
+```
+
+`verifyPayerSignature` and `preflightTransfer` are both required. Both helpers read from the free Hedera Mirror Node REST API and require no operator-funded queries. You can point them at a custom Mirror Node by passing `{ mirrorNodeUrl: "https://..." }`.
+
+By default, `ExactHederaScheme` rejects payments where `payTo` is an account alias (EVM address or public key alias) rather than an existing `0.0.xxxx` account ID. To allow alias-based destinations:
+
+```typescript
+facilitator.register(
+  "hedera:testnet",
+  new ExactHederaScheme(hederaSigner, { aliasPolicy: "allow" }),
+);
+```
+
 ### SVM Smart Wallet Support
 
 By default, the SVM facilitator only accepts transactions from standard (EOA) wallets using static instruction-layout validation. To also accept payments from Solana smart wallets (Squads, Swig, SPL Governance, etc.), enable simulation-based verification when constructing `ExactSvmScheme` on your facilitator:
