@@ -180,6 +180,16 @@ Setting the amount to `"0"` means no charge for that request.
 
 `upto` uses Permit2 because the settled amount is not known when the buyer signs. The facilitator advertises a `facilitatorAddress` in the payment requirements, and the client binds the authorization to that facilitator.
 
+### SVM Implementation
+
+On Solana, `upto` uses the [payment-channels program](https://github.com/solana-foundation/payment-channels). The client escrows the maximum amount in an onchain channel at authorization time, and the server settles the actual amount later using a signed voucher. Key roles:
+
+- **Client**: opens the channel and deposits the ceiling amount.
+- **Server**: meters usage and signs a settlement voucher for the actual amount via a `receiverAuthorizer` key.
+- **Facilitator**: co-signs the `open` transaction as fee/rent payer, and drives settlement by signing `settle_and_seal` as channel `payee`.
+
+The facilitator holds lifecycle authority (can close a channel at its current watermark) but cannot redirect funds or settle a nonzero amount without the server's `receiverAuthorizer` voucher.
+
 ### Examples
 
 * [TypeScript server example](https://github.com/x402-foundation/x402/tree/main/examples/typescript/servers/upto)
