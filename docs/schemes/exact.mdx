@@ -315,6 +315,23 @@ Additional options:
 | `smartWalletMaxPriorityFeeMicroLamports` | `number` | `50000` | Maximum priority fee in microlamports for smart wallet transactions. |
 | `smartWalletAllowedPrograms` | `string[]` | Built-in list | Allowed smart wallet program addresses. Only transactions invoking a program in this list reach simulation-based verification. |
 
+### Go SVM Server-Provided Blockhash
+
+When using the Go SVM server scheme, you can optionally pass a `ServerConfig` with an RPC URL. The server will then fetch a recent blockhash from Solana and embed it in the 402 challenge. The client uses this blockhash directly instead of making its own RPC call, reducing latency and the number of RPC requests per payment.
+
+```go
+import (
+    svmtypes "github.com/x402-foundation/x402/go/v2/mechanisms/svm"
+    exactsvm "github.com/x402-foundation/x402/go/v2/mechanisms/svm/exact/server"
+)
+
+svmScheme := exactsvm.NewExactSvmScheme(&svmtypes.ServerConfig{
+    RPCURL: "https://api.mainnet-beta.solana.com",
+})
+```
+
+If `ServerConfig` is omitted or `RPCURL` is empty, the client falls back to fetching the blockhash itself. This option is purely an optimization and does not affect payment correctness.
+
 ### EVM Transfer Methods
 
 The EVM implementation supports two transfer methods:
