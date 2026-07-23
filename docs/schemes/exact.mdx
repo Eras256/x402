@@ -282,6 +282,35 @@ const ticketSequences = await createTickets(signer, "xrpl:1", 5);
 
 The `exact` scheme has network specifications for EVM, SVM, AVM, Stellar, Aptos, Hedera, TON, Cardano, Keeta, Sui, Concordium, NEAR, and XRPL.
 
+### SVM Server-Provided Blockhash
+
+By default, the client fetches a recent blockhash from its own RPC endpoint when building a Solana transaction. You can configure the server-side `ExactSvmScheme` with an `rpcUrl` so it embeds a fresh blockhash directly in the 402 challenge (`extra.recentBlockhash` + `extra.lastValidBlockHeight`). The client then uses that blockhash instead of making its own `getLatestBlockhash` round-trip.
+
+```typescript
+import { ExactSvmScheme } from "@x402/svm/exact/server";
+
+const resourceServer = new x402ResourceServer(facilitatorClient)
+  .register("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", new ExactSvmScheme({
+    rpcUrl: "https://your-solana-rpc-endpoint.com",
+  }));
+```
+
+Or using `registerExactSvmScheme`:
+
+```typescript
+import { registerExactSvmScheme } from "@x402/svm/exact/server";
+
+registerExactSvmScheme(server, {
+  rpcUrl: "https://your-solana-rpc-endpoint.com",
+});
+```
+
+This is best-effort: if the RPC call fails, the field is omitted and the client falls back to fetching its own blockhash. Use the same RPC endpoint that your settling facilitator uses — a stale or fork-divergent blockhash will cause the transaction to expire or fail to land.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `rpcUrl` | `string` | `undefined` | RPC endpoint used to fetch a recent blockhash to embed in the 402 challenge. When omitted, no blockhash is embedded and the client fetches its own. |
+
 ### SVM Smart Wallet Support
 
 By default, the SVM facilitator only accepts transactions from standard (EOA) wallets using static instruction-layout validation. To also accept payments from Solana smart wallets (Squads, Swig, SPL Governance, etc.), enable simulation-based verification when constructing `ExactSvmScheme` on your facilitator:
