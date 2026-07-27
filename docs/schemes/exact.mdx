@@ -86,8 +86,8 @@ Use `exact` when the final charge is known before the response is generated, suc
         Schemes: []nethttpmw.SchemeConfig{
             {Network: x402.Network("eip155:84532"), Server: exactevm.NewExactEvmScheme()},
             // Pass ServerConfig with RPCURL to embed a recent blockhash in the 402 challenge,
-        // saving clients an RPC round-trip. Omit to let clients fetch their own.
-        {Network: x402.Network("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"), Server: exactsvm.NewExactSvmScheme(&svm.ServerConfig{RPCURL: "https://api.devnet.solana.com"})},
+            // saving clients an RPC round-trip. Omit to let clients fetch their own.
+            {Network: x402.Network("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"), Server: exactsvm.NewExactSvmScheme(&svm.ServerConfig{RPCURL: "https://api.devnet.solana.com"})},
         },
     })(mux)
     ```
