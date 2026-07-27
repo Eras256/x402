@@ -23,7 +23,12 @@ Use `exact` when the final charge is known before the response is generated, suc
 
     const resourceServer = new x402ResourceServer(facilitatorClient)
       .register("eip155:84532", new ExactEvmScheme())
-      .register("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", new ExactSvmScheme());
+      .register(
+        "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        // Pass rpcUrl to embed a recent blockhash in the 402 challenge,
+        // saving clients an RPC round-trip. Omit to let clients fetch their own.
+        new ExactSvmScheme({ rpcUrl: "https://api.devnet.solana.com" }),
+      );
 
     app.use(
       paymentMiddleware(
