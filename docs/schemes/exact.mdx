@@ -108,7 +108,9 @@ Use `exact` when the final charge is known before the response is generated, suc
 
     server = x402ResourceServer(facilitator)
     server.register("eip155:84532", ExactEvmServerScheme())
-    server.register("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", ExactSvmServerScheme())
+    # Pass rpc_url to embed a recent blockhash in the 402 challenge,
+    # saving clients an RPC round-trip. Omit to let clients fetch their own.
+    server.register("solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", ExactSvmServerScheme(rpc_url="https://api.devnet.solana.com"))
 
     routes = {
         "GET /weather": RouteConfig(
