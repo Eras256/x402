@@ -73,6 +73,27 @@ This protection is enabled by default when using the standard SVM facilitator re
 
 **If you are a merchant settling payments directly (without a facilitator), you must implement equivalent duplicate detection yourself.** See the [Exact SVM Scheme Specification](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_svm.md) for the full specification.
 
+### HTTPFacilitatorClient configuration
+
+When constructing an `HTTPFacilitatorClient` in TypeScript, you can pass a `FacilitatorConfig` object with the following options:
+
+| Option | Type | Default | Description |
+| ------ | ---- | ------- | ----------- |
+| `url` | `string` | `https://x402.org/facilitator` | The base URL of the facilitator service. |
+| `timeoutMs` | `number` | `30000` | Per-request timeout in milliseconds applied to each `verify()`, `settle()`, and `getSupported()` call. Must be a positive integer no greater than `2147483647` (about 24.8 days). On expiry, the operation rejects with a `FacilitatorTimeoutError`. For `settle()`, a timeout is an indeterminate outcome — the facilitator may still have completed the settlement. |
+| `createAuthHeaders` | `() => Promise<{ verify?, settle?, supported?, bazaar? }>` | — | Returns per-path authentication headers for the facilitator. The returned object must be keyed by path (`verify`, `settle`, `supported`, `bazaar`), not a flat headers object. |
+
+```typescript
+import { HTTPFacilitatorClient } from "@x402/core/server";
+
+const facilitatorClient = new HTTPFacilitatorClient({
+  url: "https://your-facilitator.com",
+  timeoutMs: 10000, // 10 second timeout per request
+});
+```
+
+If a facilitator accepts a connection but never completes the response, the request rejects with a `FacilitatorTimeoutError` (a subclass of `FacilitatorResponseError`) after `timeoutMs` milliseconds. HTTP middlewares surface this as a `502` response.
+
 ### Summary
 
 The facilitator acts as an independent verification and settlement layer within the x402 protocol. It helps servers confirm payments and submit transactions onchain without requiring direct blockchain infrastructure.
