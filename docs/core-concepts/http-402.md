@@ -39,6 +39,19 @@ x402 V2 uses three standardized headers for payment communication:
 
 All headers contain valid Base64-encoded JSON strings. This encoding ensures compatibility across different HTTP implementations and prevents issues with special characters in JSON payloads.
 
+### Cache-Control behavior
+
+The x402 server middleware automatically sets `Cache-Control` headers on payment responses to prevent sensitive payment data from being stored by shared caches:
+
+| Response | Status | `Cache-Control` value |
+|----------|--------|-----------------------|
+| Payment required (no payment sent) | 402 | `no-store` |
+| Precondition failed (e.g. Permit2 allowance required) | 412 | `no-store` |
+| Settlement failure | 402 | `no-store` |
+| Successful payment response | 200 | `private` (merged with any existing value) |
+
+The `no-store` directive prevents proxies and CDNs from caching 402 responses, ensuring clients always receive fresh payment requirements. The `private` directive on 200 responses prevents shared caches from storing user-specific settlement metadata included in the `PAYMENT-RESPONSE` header.
+
 Whether funds move **onchain** in the same HTTP round trip depends on the **scheme**: **`exact`** and **`upto`** typically settle immediately, while **`batch-settlement`** confirms the payment authorization up front and redeems value **onchain** later according to the network binding (see **[Batch settlement](/schemes/batch-settlement)**).
 
 ### Summary
