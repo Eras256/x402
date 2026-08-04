@@ -403,7 +403,7 @@ Register hooks on the facilitator for verification and settlement lifecycle even
 
 Register hooks on the MCP client for payment lifecycle events specific to tool calls. Use cases include logging payments, enforcing per-tool spending limits or auditing payment receipts.
 
-* **onPaymentRequired** — Runs when a 402 payment required response is received from a tool call. First hook to return a result wins. Return `{ abort: true }` to cancel, `{ payment }` to supply a pre-built payload, or `void` to proceed with normal payment flow.
+* **onPaymentRequired** — Runs when a 402 payment required response is received from a tool call. First hook to return a result wins. Return `{ abort: true }` to cancel, `{ payment }` to supply a pre-built payload, or `void` to proceed with normal payment flow. This hook also runs for corrective 402 responses during payment recovery, so spend controls and abort logic are enforced on every payment attempt.
 * **onBeforePayment** — Runs after payment approval but before the payment payload is created.
 * **onAfterPayment** — Runs after the payment payload is submitted and the tool result is received.
 
