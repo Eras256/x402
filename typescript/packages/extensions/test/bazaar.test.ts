@@ -1646,6 +1646,76 @@ describe("Bazaar Discovery Extension", () => {
     });
   });
 
+  describe("extractDiscoveryInfo - opaque-origin resource schemes", () => {
+    // mcp:// is not a WHATWG "special scheme" (only http/https/ws/wss/ftp/file
+    // are), so it parses to an opaque origin, and URL.prototype.origin
+    // serializes an opaque origin as the literal string "null" — see
+    // https://github.com/x402-foundation/x402/issues/3121. The fix is
+    // scheme-agnostic (detect the opaque-origin sentinel, not a scheme
+    // allowlist), so this pins the general rule with two independent
+    // schemes, not just mcp://, to catch the next undocumented scheme
+    // before it regresses the same way.
+    it("should use the raw resource URL as canonical for mcp:// (opaque origin)", () => {
+      const declared = declareDiscoveryExtension({
+        toolName: "financial_analysis",
+        description: "Analyze financial data",
+        inputSchema: {
+          type: "object",
+          properties: { ticker: { type: "string" } },
+        },
+      });
+
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: "exact",
+        network: "eip155:8453" as unknown,
+        payload: {},
+        accepted: {} as unknown,
+        resource: { url: "mcp://tool/financial_analysis" },
+        extensions: {
+          [BAZAAR.key]: declared.bazaar,
+        },
+      };
+
+      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+
+      expect(discovered).not.toBeNull();
+      expect(discovered!.resourceUrl).toBe("mcp://tool/financial_analysis");
+      expect(discovered!.resourceUrl).not.toContain("null");
+    });
+
+    it("should use the raw resource URL as canonical for an arbitrary non-special scheme (opaque origin)", () => {
+      // Not mcp:// — a made-up scheme this package has never heard of, to
+      // prove the fix doesn't special-case mcp specifically.
+      const declared = declareDiscoveryExtension({
+        toolName: "financial_analysis",
+        description: "Analyze financial data",
+        inputSchema: {
+          type: "object",
+          properties: { ticker: { type: "string" } },
+        },
+      });
+
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: "exact",
+        network: "eip155:8453" as unknown,
+        payload: {},
+        accepted: {} as unknown,
+        resource: { url: "test-scheme://tool/financial_analysis" },
+        extensions: {
+          [BAZAAR.key]: declared.bazaar,
+        },
+      };
+
+      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+
+      expect(discovered).not.toBeNull();
+      expect(discovered!.resourceUrl).toBe("test-scheme://tool/financial_analysis");
+      expect(discovered!.resourceUrl).not.toContain("null");
+    });
+  });
+
   describe("validateAndExtract - MCP", () => {
     it("should validate and extract MCP discovery info", () => {
       const declared = declareDiscoveryExtension({

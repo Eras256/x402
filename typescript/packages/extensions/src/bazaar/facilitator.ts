@@ -573,12 +573,23 @@ export function extractDiscoveryInfo(
     return null;
   }
 
-  // Strip query params (?) and hash sections (#) for discovery cataloging
+  // Strip query params (?) and hash sections (#) for discovery cataloging.
+  // Canonicalization (origin + path) is only meaningful for a WHATWG
+  // "special scheme" (http, https, ws, wss, ftp, file) — those are the only
+  // schemes the URL spec defines a real origin for. Any other scheme (e.g.
+  // mcp://) parses to an opaque origin, which URL.prototype.origin
+  // serializes as the literal string "null", not a per-scheme special case
+  // to detect and list here: skip canonicalization entirely and use the
+  // raw resource URL as-is, so this holds for every current and future
+  // non-special scheme, not just the ones enumerated by name.
   const url = new URL(resourceUrl);
   // If a routeTemplate is present (dynamic route), use it as the canonical path
-  const canonicalUrl = routeTemplate
-    ? `${url.origin}${routeTemplate}`
-    : `${url.origin}${url.pathname}`;
+  const canonicalUrl =
+    url.origin === "null"
+      ? resourceUrl
+      : routeTemplate
+        ? `${url.origin}${routeTemplate}`
+        : `${url.origin}${url.pathname}`;
 
   // Extract description and mimeType from resource info (v2) or requirements (v1)
   let description: string | undefined;
