@@ -2,32 +2,36 @@
 
 ## Versions supported
 
-- ❌ `v1` — not supported.
+- ❌ `v1` is not supported.
 - ✅ `v2`
 
 ## Supported Networks
 
 [CAIP-2](https://namespaces.chainagnostic.org/stellar/caip2) identifiers:
-- `stellar:pubnet` — Stellar mainnet
-- `stellar:testnet` — Stellar testnet
+- `stellar:pubnet`: Stellar mainnet
+- `stellar:testnet`: Stellar testnet
 
 > [!IMPORTANT]
-> **Verification status.** Three properties of this design are being verified
-> against live testnet behaviour. Where reality differs, this spec changes — not
-> the implementation.
+> **Verification status (`contract` profile).** All three properties below
+> are closed against real `stellar:testnet` behaviour, each backed by a
+> settled transaction hash, not simulation alone. Full evidence:
+> [`conformance/RESULTS.md`](https://github.com/Eras256/Periplo/blob/main/conformance/RESULTS.md)
+> in the reference implementation, settled tx
+> [`cc46374e...`](https://stellar.expert/explorer/testnet/tx/cc46374e34f70ff479ccf919d55df33d0bf1a05e1c7479fa8f90dac596c5d218).
 >
 > 1. `require_auth_for_args` accepts a root argument tuple of `(authorization,)`
 >    while the [SEP-41] `transfer` rides as a sub-invocation for `max_amount`.
->    — **pending**
-> 2. Pull → pay → refund fits within Soroban's per-transaction read, write,
->    instruction and memory limits. — **pending**
+>    **Closed.** Confirmed via `inspectAuthEntry` on a real simulation: root
+>    call `argCount=1`, one sub-invocation.
+> 2. The pull-and-refund sequence fits within Soroban's per-transaction read,
+>    write, instruction and memory limits. **Closed.** `2,026,530` instructions
+>    of a `400,000,000` ceiling, `392` read bytes and `680` write bytes.
 > 3. `temporary()` storage TTL can always cover `deadline_ledger − current_ledger`
->    under the `MAX_WINDOW_LEDGERS` bound. — **pending**
+>    under the `MAX_WINDOW_LEDGERS` bound. **Closed.** The settled nonce
+>    entry's `liveUntilLedgerSeq`, read back from RPC, exceeded `deadline_ledger`.
 >
-> Each item is closed with a settled transaction hash before this leaves Draft.
->
-> `extra.uptoProfile` and `extra.settlementContract` are proposed field names —
-> happy to align with whatever convention the maintainers prefer.
+> `extra.uptoProfile` and `extra.settlementContract` are proposed field names.
+> Happy to align with whatever convention the maintainers prefer.
 
 ## Summary
 
@@ -41,14 +45,19 @@ Unlike `exact`, the settled amount is unknown when the client signs. Two
 conformant profiles close that gap while preserving all four [core `upto`
 properties](./scheme_upto.md#core-properties-must):
 
-| Profile | Settlement path | Buyer accounts | Ships a contract |
-| --- | --- | --- | --- |
-| **`contract`** (default) | `UptoSettlement`, atomic pull-and-refund | G- and C-accounts | Yes |
-| **`smartAccount`** (optional) | Direct [SEP-41] `transfer`, policy in `__check_auth` | C-accounts only | No |
+| Profile | Settlement path | Buyer accounts | Ships a contract | Facilitator binding |
+| --- | --- | --- | --- | --- |
+| **`contract`** (default) | `UptoSettlement`, atomic pull-and-refund | G- and C-accounts | Yes | Bound to one named facilitator |
+| **`stateless`** (alternative) | `UptoSettlement` (stateless), atomic `approve` + `transfer_from` | G- and C-accounts | Yes, a different stateless contract | Facilitator-agnostic |
+
+Both profiles ship a contract. They differ in settlement mechanism, not in
+whether Soroban's `require_auth_for_args` trick is used. § Choosing between
+`contract` and `stateless` (under Profile `stateless`, below) states the
+deployment trade-off.
 
 > [!NOTE]
 > [SEP-41] Soroban tokens only; classic assets are out of scope. Amounts are
-> `i128` in the token's own precision — USDC on Stellar uses **7 decimals**.
+> `i128` in the token's own precision. USDC on Stellar uses **7 decimals**.
 
 ## Why a SEP-41 allowance is insufficient
 
@@ -63,21 +72,22 @@ properties](./scheme_upto.md#core-properties-must):
 
 Recipient binding is decisive: it would let a compromised facilitator redirect
 funds, which is the risk Core Property 3 exists to eliminate. Enforcing both
-properties requires code that runs at settlement — hence the `contract` profile.
+properties requires code that runs at settlement. That is what the `contract`
+profile provides.
 
 > A facilitator implementing `upto` on Stellar via `approve` / `transfer_from`
 > does not satisfy Core Properties 1 or 3 and MUST NOT advertise `upto` support.
 
-## Profile `contract` — protocol flow
+## Profile `contract`: protocol flow
 
 1. Client requests a resource; server responds `402` with `amount` set to the
    authorized **maximum**, plus `extra.areFeesSponsored`, `extra.uptoProfile`
    and `extra.settlementContract`.
 2. Client builds an `Authorization` (below) and an invocation of
    `UptoSettlement.settle`, then simulates to identify required auth entries.
-3. Client signs the auth entries — the root invocation restricted to
+3. Client signs the auth entries: the root invocation restricted to
    `(authorization,)`, plus the [SEP-41] `transfer` sub-invocation for
-   `max_amount` — with expiration `currentLedger + ceil(maxTimeoutSeconds /
+   `max_amount`. Expiration is `currentLedger + ceil(maxTimeoutSeconds /
    estimatedLedgerSeconds)`. Use the current network estimate for
    `estimatedLedgerSeconds` where available; fall back to `5`.
 4. Client retries with the base64 XDR in `payload.transaction`.
@@ -101,9 +111,9 @@ verification.
 #[derive(Clone)]
 pub struct Authorization {
     pub from: Address,           // buyer
-    pub to: Address,             // MUST equal requirements.payTo — Property 3
+    pub to: Address,             // MUST equal requirements.payTo (Property 3)
     pub asset: Address,          // SEP-41 token
-    pub max_amount: i128,        // ceiling — Property 4
+    pub max_amount: i128,        // ceiling (Property 4)
     pub valid_after_ledger: u32, // Property 2
     pub deadline_ledger: u32,    // Property 2
     pub nonce: BytesN<32>,       // Property 1
@@ -113,7 +123,7 @@ pub struct Authorization {
 
 Every field is covered by the client's signature. `facilitator` binds settlement
 to one operator, mirroring `witness.facilitator` in the [EVM
-profile](./scheme_upto_evm.md); it prevents an intercepted payload being settled
+profile](./scheme_upto_evm.md). It prevents an intercepted payload being settled
 elsewhere.
 
 **Ledger sequences, not timestamps.** Stellar auth entries expire by
@@ -122,6 +132,38 @@ ledger sequences derived client-side from `maxTimeoutSeconds`. At the default
 `60` and ~5-second ledgers, an authorization is valid for roughly 12 ledgers.
 Implementations MUST NOT convert timestamps to ledger sequences by assuming a
 fixed interval over long horizons.
+
+## Both G- and C-account payers
+
+`Authorization.from` and `Authorization.facilitator` MAY be either a
+G-account (`G...`) or a C-account (`C...`) Stellar address.
+`require_auth_for_args`/`require_auth` dispatch transparently to either the
+protocol-defined Ed25519 account signature or the C-account's own
+`__check_auth`. The contract does not special-case either kind; nothing in
+`settle()` assumes a G-account payer. (See also
+[#3134](https://github.com/x402-foundation/x402/pull/3134)'s more extensive
+treatment of G-/C-account signing adapters, which informed this section.)
+
+Facilitators MUST treat the credential's `signature` field as opaque. For a
+G-account it has the protocol-defined account-signature shape. For a
+C-account its `ScVal` type and contents are defined entirely by that
+account's `__check_auth`. Facilitators MUST NOT require an Ed25519 shape for
+a C-account credential or attempt to reproduce wallet-specific verification
+off-chain. Enforcing-mode simulation is the authoritative check (§
+Facilitator verification rules, rule 5).
+
+A C-account cannot be a transaction source. When building the candidate
+invocation for simulation, clients MUST use a separate, funded G-account as
+the simulation source when `from` is a C-account. Clients MAY do the same for
+a G-account payer, for consistency. This source only produces a valid
+simulation. It is never included in the signed authorization tree and need
+not be the eventual facilitator.
+
+A C-account's spending policy sees `max_amount` at signing time, not the
+later `actual_amount`. This is true under every `upto` profile on Soroban,
+since the settled amount is unknown by construction when the client signs.
+Clients MUST surface a wallet's policy rejection rather than weakening or
+rewriting the signed authorization tree.
 
 ## The `UptoSettlement` contract
 
@@ -133,7 +175,7 @@ pub fn settle(env: Env, authorization: Authorization, actual_amount: i128)
 from what the client signs. The contract enforces:
 
 ```rust
-// 1. Authorize the client for the authorization ONLY — not for actual_amount.
+// 1. Authorize the client for the authorization only (excludes actual_amount).
 authorization.from.require_auth_for_args((authorization.clone(),).into_val(&env));
 authorization.facilitator.require_auth();
 
@@ -153,7 +195,7 @@ if env.storage().temporary().has(&key) { panic_with_error!(&env, Error::Authoriz
 env.storage().temporary().set(&key, &authorization.deadline_ledger);
 env.storage().temporary().extend_ttl(&key, ttl, ttl);
 
-// 3. Recipient binding — `to` comes from the signed struct.
+// 3. Recipient binding: `to` comes from the signed struct.
 let token = token::Client::new(&env, &authorization.asset);
 token.transfer(&authorization.from, &env.current_contract_address(), &authorization.max_amount);
 if actual_amount > 0 { token.transfer(&env.current_contract_address(), &authorization.to, &actual_amount); }
@@ -162,15 +204,15 @@ if refund > 0 { token.transfer(&env.current_contract_address(), &authorization.f
 ```
 
 **`require_auth_for_args` is what makes `upto` expressible on Soroban.** A plain
-`require_auth()` authorizes the invocation with its full argument list —
-including `actual_amount` — forcing the client to know the charge at signing time
-and collapsing `upto` into `exact`. Restricting the authorized tuple to
-`(authorization,)` decouples the ceiling from the charge.
+`require_auth()` authorizes the invocation with its full argument list,
+including `actual_amount`. That forces the client to know the charge at
+signing time, collapsing `upto` into `exact`. Restricting the authorized
+tuple to `(authorization,)` decouples the ceiling from the charge.
 
 **Why pull-and-refund.** The client's signed sub-invocation is
 `transfer(from, UptoSettlement, max_amount)`. Auth entries commit to **exact**
 sub-invocation arguments, so the contract cannot instead call
-`transfer(from, to, actual_amount)` — the mismatch fails authorization. All legs
+`transfer(from, to, actual_amount)`. The mismatch fails authorization. All legs
 execute in one transaction: there is **no custody window**. Costs, stated plainly:
 
 - Up to **three** token transfers per settlement. The refund leg is skipped when
@@ -207,12 +249,15 @@ and cheaper than `persistent()`.
 }
 ```
 
-- `amount` — **phase-dependent** per [Core Property
+- `amount` is **phase-dependent** per [Core Property
   5](./scheme_upto.md#5-phase-dependent-amount-semantics-in-paymentrequirements):
   the authorized **maximum** at `/verify`, the **actual charge** at `/settle`.
-- `extra.areFeesSponsored` — currently always `true`, matching `exact`.
-- `extra.uptoProfile` — `"contract"` or `"smartAccount"`.
-- `extra.settlementContract` — REQUIRED when `uptoProfile` is `"contract"`.
+- `extra.areFeesSponsored`: currently always `true`, matching `exact`.
+- `extra.uptoProfile`: `"contract"` or `"stateless"`.
+- `extra.settlementContract`: REQUIRED for both profiles. It is the canonical
+  `UptoSettlement` deployment address for the selected `uptoProfile` on this
+  network. `contract` and `stateless` are different contracts; implementations
+  supporting both MUST deploy and configure both addresses.
 
 ## `PaymentPayload` `payload` field
 
@@ -220,10 +265,10 @@ and cheaper than `persistent()`.
 {
   "transaction": "AAAAAgAAAABriIN4poutFUmHfB6FbFJu8GgXoPPTGQWREqFpPfvO1AAA...",
   "authorization": {
-    "from": "GBHE…", "to": "GBHE…", "asset": "CBIE…",
+    "from": "GBHE...", "to": "GBHE...", "asset": "CBIE...",
     "maxAmount": "50000000",
     "validAfterLedger": 0, "deadlineLedger": 58291204,
-    "nonce": "9f2c1a…",
+    "nonce": "9f2c1a...",
     "facilitator": "GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ"
   }
 }
@@ -252,9 +297,14 @@ the facilitator's own address; `max_amount` equals the **verify-phase**
 and `deadline_ledger - currentLedger <= ceil(maxTimeoutSeconds /
 estimatedLedgerSeconds)`.
 
-**3. Authorization entries.** Signed entries for `authorization.from`, credential
-type `sorobanCredentialsAddress` only. The authorized root argument tuple MUST be
-exactly `(authorization,)` — an entry covering `actual_amount` indicates a client
+**3. Authorization entries.** Signed entries for `authorization.from`.
+Credential type MUST be address-based authorization (`sorobanCredentialsAddress`,
+or a newer address-credential variant on networks where it is active), never
+source-account implicit authorization. The credential address MUST be either
+`Address::Account` (G-account) or `Address::Contract` (C-account) and MUST
+equal `authorization.from`; its `signature` field MUST be treated as opaque
+(§ Both G- and C-account payers). The authorized root argument tuple MUST be
+exactly `(authorization,)`. An entry covering `actual_amount` indicates a client
 that has fixed the charge and MUST be rejected. Exactly one `subInvocation`:
 `transfer(from, settlementContract, max_amount)` on `requirements.asset`. All
 required signers present. Entry expiration within the `maxTimeoutSeconds` bound.
@@ -263,7 +313,7 @@ required signers present. Entry expiration within the `maxTimeoutSeconds` bound.
 operation source MUST NOT be the facilitator. The facilitator MUST NOT be
 `authorization.from`, and MUST NOT appear as a signer in any client-supplied auth
 entry. Simulation MUST emit balance changes consistent **only** with the payer
-decrease, recipient increase, and the transient contract legs — **no others**.
+decrease, recipient increase, and the transient contract legs. **No others.**
 These mirror [`exact` §4](../exact/scheme_exact_stellar.md#4--facilitator-safety)
 and are equally load-bearing.
 
@@ -273,7 +323,7 @@ transfer to `authorization.to` of exactly the settle-phase `requirements.amount`
 
 > [!WARNING]
 > Soroban's simulator **records** `require_auth()` without verifying signatures.
-> Simulation is not authorization verification — a payload with absent or invalid
+> Simulation is not authorization verification. A payload with absent or invalid
 > signatures can simulate successfully. Verify signatures explicitly.
 
 ## Settle-time verification
@@ -285,7 +335,7 @@ below the signed ceiling. Facilitators MUST:
    `requirements.amount`. The client signed the ceiling.
 2. Validate `0 <= requirements.amount <= authorization.max_amount`.
 3. Invoke `settle` with `actual_amount = requirements.amount`.
-4. Re-check `deadline_ledger` — metering happens between verify and settle.
+4. Re-check `deadline_ledger`. Metering happens between verify and settle.
 
 > A facilitator enforcing `max_amount === requirements.amount` at settle time
 > rejects all partial settlements and breaks the scheme. The equality check in
@@ -301,7 +351,7 @@ stroops), refresh Soroban resource data, never reuse the client's bid. Because
 `maxTransactionFeeStroops` than `exact` and reject with
 `invalid_upto_stellar_payload_fee_exceeds_maximum` when exceeded.
 
-Facilitators SHOULD use **channel accounts** — the facilitator is the transaction
+Facilitators SHOULD use **channel accounts**. The facilitator is the transaction
 source, so its sequence number is the bottleneck under bursty agent traffic.
 
 `SettlementResponse` follows the `upto` extension defined in
@@ -310,8 +360,8 @@ the base schema plus `amount`, the **actual** amount charged in atomic units
 (may be `0`).
 
 ```json
-{ "success": true, "transaction": "a1b2…", "network": "stellar:testnet",
-  "payer": "GBHE…", "amount": "1858000" }
+{ "success": true, "transaction": "a1b2...", "network": "stellar:testnet",
+  "payer": "GBHE...", "amount": "1858000" }
 ```
 
 ## Error codes
@@ -320,36 +370,126 @@ the base schema plus `amount`, the **actual** amount charged in atomic units
 [x402 specification](../../x402-specification-v2.md#9-error-handling), plus two
 that carry over from its scheme and its network:
 
-- **`invalid_upto_stellar_payload_settlement_exceeds_amount`** — attempted to
+- **`invalid_upto_stellar_payload_settlement_exceeds_amount`**: attempted to
   settle for more than the authorized maximum. Mirrors
   `invalid_upto_evm_payload_settlement_exceeds_amount`.
-- **`invalid_upto_stellar_payload_fee_exceeds_maximum`** — the
+- **`invalid_upto_stellar_payload_fee_exceeds_maximum`**: the
   simulation-derived settlement fee exceeds `maxTransactionFeeStroops`. Mirrors
   `invalid_exact_stellar_payload_fee_exceeds_maximum`.
 
 Every rejection MUST carry a non-null `reason`.
 
-## Profile `smartAccount`
+## Profile `stateless`
 
-Where the buyer runs a custom account (C-account) with a `__check_auth` spending
-policy, the intermediary contract is unnecessary. The client authorizes
-`transfer(from, to, actual_amount)` directly and its own account enforces the
-four properties in `__check_auth`: a per-recipient allowlist (3), a cap (4), a
-ledger window (2), and a consumed-nonce set (1).
+An alternative to `contract`, contributed by
+[Iam0TI](https://github.com/Iam0TI) via
+[x402-foundation/x402#3134](https://github.com/x402-foundation/x402/pull/3134),
+with a reference implementation at
+[`0d1026/Rialto`](https://github.com/0d1026/Rialto/tree/mvp/contracts/upto-settlement).
+Full protocol flow, wire formats, and facilitator verification rules: see that
+PR's `specs/schemes/upto/scheme_upto_stellar.md`. This section summarizes the
+mechanism and states its trade-off against `contract` plainly. It does not
+restate every MUST from the source PR, which remains the authoritative
+reference for implementing this profile.
 
-Advantages: one token transfer instead of three, lower resource fees, and no
-requirement to hold `max_amount` — only `actual_amount`. Constraint: C-accounts
-only; G-accounts have no programmable authorization, which is why `contract` is
-the default.
+**Mechanism.** `UptoSettlement` under this profile is *stateless*. It holds no
+funds at any point and stores no per-request state on-chain. The client signs
+one authorization binding `(payTo, asset, maxAmount, validAfter, deadline,
+expirationLedger, salt, autoRevoke)`. That covers everything except the
+eventual charge. A `token.approve(from, UptoSettlement, maxAmount,
+expirationLedger)` sub-invocation sits nested beneath it. If
+`autoRevoke = true`, a second `approve(from, UptoSettlement, 0, 0)`
+sub-invocation atomically clears any unused remainder. At settlement, the
+contract grants itself that allowance, satisfied by the pre-signed
+sub-invocation, then calls `transfer_from(self, from, payTo, amount)`
+directly: one real token movement, buyer to recipient, with the contract
+acting purely as authorized spender rather than an intermediate holder.
 
-A conformant policy MUST enforce all four properties. A policy enforcing only a
-cap is **not** conformant — it leaves recipient binding to the facilitator.
-Facilitators advertising `smartAccount` MUST verify the buyer's policy exposes
-the required constraints and MUST NOT assume enforcement they cannot observe.
+```rust
+pub fn settle(
+    env: Env, from: Address, pay_to: Address, asset: Address,
+    max_amount: i128, valid_after: u64, deadline: u64,
+    expiration_ledger: u32, salt: BytesN<32>, auto_revoke: bool,
+    amount: i128,
+) -> i128
+```
 
-This is the composition point with Stellar smart-account budgets: an agent under
-a spending policy stays inside its budget by construction across every `upto`
-payment, without trusting the resource server or facilitator to enforce it.
+**Replay protection is Soroban's own.** No app-level nonce or TTL management.
+Single use comes entirely from the protocol-level nonce every signed
+authorization entry already carries, consumed on first use and scoped to the
+entry's own `signatureExpirationLedger`. This removes an implementation-bug
+class that `contract`'s `temporary()`-storage nonce has to actively defend
+against: sizing `extend_ttl` to cover `deadline_ledger − currentLedger` (§
+Nonce storage and TTL, above). `stateless` carries no such risk, because
+there is no author-managed TTL to size in the first place.
+
+**The trade-off, stated plainly.** `stateless` settles cheaper: real settled
+transactions from both profiles' own testnet deployments, each independently
+checked against Horizon. `fee_charged`, and the decoded on-chain `settle`
+call arguments, confirm `stateless`'s two transactions are a genuine partial
+settlement (`300,000` of a `1,000,000` signed ceiling) and a genuine maximum
+settlement (`500,000` of `500,000`), not just labels taken on trust:
+
+| | `contract` (partial) | `stateless` (partial) | `stateless` (maximum) |
+| --- | --- | --- | --- |
+| `fee_charged` | 42,872 stroops | 32,731 stroops | 30,585 stroops |
+| Transaction | [`cc46374e...`](https://stellar.expert/explorer/testnet/tx/cc46374e34f70ff479ccf919d55df33d0bf1a05e1c7479fa8f90dac596c5d218) | [`2ea539f6...`](https://stellar.expert/explorer/testnet/tx/2ea539f67aa8daff06698a93279345c88c71dd41a5a77f77d65335f4113a11d5) | [`b76b45a3...`](https://stellar.expert/explorer/testnet/tx/b76b45a383f7e54991e3fad6beb0143b7b78c2bff25e929305fe911241869763) |
+
+It also never holds a balance, even transiently within a transaction. In
+exchange, settlement is **facilitator-agnostic**: no facilitator identity is
+bound into the signed tree, so any party holding the signed authorization
+entries, not only the resource server's intended facilitator, can submit
+settlement, for up to the full signed `maxAmount`, to the signed `payTo`.
+`payTo` and `maxAmount` are still fully bound. This is not a redirection or
+overcharge risk. It is a risk that a leaked or multiply-forwarded
+authorization gets settled by an unintended party, for more than the actual
+metered usage, before the intended facilitator acts. Deployments that need
+settlement restricted to one operator MUST enforce that off-chain (e.g. the
+resource server only ever forwards payloads to one trusted facilitator
+endpoint).
+
+**A behavior worth documenting precisely.** SEP-41 `approve` replaces rather
+than adds to an existing allowance. If a buyer uses `autoRevoke = false` and
+leaves a remainder allowance from one authorization (permitted by design: see
+the source PR's § `PaymentPayload` `payload` field), a **subsequent**,
+unrelated `stateless` authorization settling against the same `(from, asset,
+UptoSettlement)` triple will silently overwrite that remainder via its own
+fresh `approve()` call. The practical exposure is small. The remainder was
+already unreachable except through another `settle()` call requiring its own
+fresh signature. But implementations SHOULD document this rather than let
+"the remainder survives until `expirationLedger`" read as a more durable
+guarantee than it is.
+
+**Choosing between `contract` and `stateless`.** Neither profile is a
+universal default. The right choice depends on deployment topology.
+`contract` fits a **federated or multi-facilitator** deployment, where more
+than one facilitator may plausibly see the same signed payload
+(catalog-driven discovery routing, a resource server trying more than one
+facilitator, a facilitator that receives a payload for `/verify` but never
+proceeds to `/settle`), and containing a leaked-authorization risk matters
+more than settlement cost. `stateless` fits a **single-operator** deployment,
+one resource server, one trusted facilitator, a controlled channel between
+them, where that risk is already minimized operationally and the lower cost
+and simpler implementation are worth more. Implementers choose per
+deployment. This spec does not declare one profile conformant and the other
+not.
+
+**A third design, named here but not specified.** Both profiles above ship
+a shared `UptoSettlement` contract that every buyer's authorization is
+checked against. A pure self-enforcement design is possible instead: a
+buyer's own C-account `__check_auth` enforces all four core properties
+itself (recipient allowlist, cap, ledger window, consumed-nonce set), and the
+client authorizes a direct SEP-41 `transfer(from, to, actual_amount)` with no
+intermediary contract at all. That is a genuinely different value
+proposition from either profile above: zero shared-contract trust surface,
+since there is nothing between the buyer's own account and the token
+transfer for either `contract` or `stateless` to be a dependency of. It is
+also the narrowest. It only ever works for a buyer running a
+policy-enforcing custom account, with no path for a plain G-account payer,
+unlike either documented profile. It is not written up as a third profile
+here because, unlike `contract` and `stateless`, nobody has yet built and
+settled a real transaction against it. This paragraph records the design
+space, not a specified and evidenced option.
 
 ## Security considerations
 
@@ -364,7 +504,7 @@ network: the resource server chooses the charge. `upto` bounds the buyer's
 downside; it does not guarantee the seller's revenue.
 
 **Unsettled authorizations lock nothing.** No funds move at signing time. The
-exposure is the buyer keeping `max_amount` liquid until `deadline_ledger` —
+exposure is the buyer keeping `max_amount` liquid until `deadline_ledger`,
 which is why short `maxTimeoutSeconds` values are preferable.
 
 **Contract balance is transient by design.** Any implementation allowing a
