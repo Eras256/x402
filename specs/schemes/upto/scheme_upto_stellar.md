@@ -47,13 +47,14 @@ properties](./scheme_upto.md#core-properties-must):
 
 | Profile | Settlement path | Buyer accounts | Ships a contract | Facilitator binding |
 | --- | --- | --- | --- | --- |
-| **`contract`** (default) | `UptoSettlement`, atomic pull-and-refund | G- and C-accounts | Yes | Bound to one named facilitator |
-| **`stateless`** (alternative) | `UptoSettlement` (stateless), atomic `approve` + `transfer_from` | G- and C-accounts | Yes, a different stateless contract | Facilitator-agnostic |
+| **`contract`** | `UptoSettlement`, atomic pull-and-refund | G- and C-accounts | Yes | Bound to one named facilitator |
+| **`stateless`** | `UptoSettlement` (stateless), atomic `approve` + `transfer_from` | G- and C-accounts | Yes, a different stateless contract | Facilitator-agnostic |
 
-Both profiles ship a contract. They differ in settlement mechanism, not in
-whether Soroban's `require_auth_for_args` trick is used. § Choosing between
-`contract` and `stateless` (under Profile `stateless`, below) states the
-deployment trade-off.
+Both profiles ship a contract and are equally conformant. They differ in
+settlement mechanism, not in whether Soroban's `require_auth_for_args` trick
+is used, and neither is a universal default: § Choosing between `contract`
+and `stateless` (under Profile `stateless`, below) states the deployment
+trade-off and the topology each one fits.
 
 > [!NOTE]
 > [SEP-41] Soroban tokens only; classic assets are out of scope. Amounts are
