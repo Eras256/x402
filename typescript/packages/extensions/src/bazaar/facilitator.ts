@@ -574,19 +574,24 @@ export function extractDiscoveryInfo(
   }
 
   // Strip query params (?) and hash sections (#) for discovery cataloging.
-  // Canonicalization (origin + path) is only meaningful for a WHATWG
-  // "special scheme" (http, https, ws, wss, ftp, file) — those are the only
-  // schemes the URL spec defines a real origin for. Any other scheme (e.g.
-  // mcp://) parses to an opaque origin, which URL.prototype.origin
-  // serializes as the literal string "null", not a per-scheme special case
-  // to detect and list here: skip canonicalization entirely and use the
-  // raw resource URL as-is, so this holds for every current and future
-  // non-special scheme, not just the ones enumerated by name.
+  // `url.origin` is only meaningful for a WHATWG "special scheme" (http,
+  // https, ws, wss, ftp, file) — those are the only schemes the URL spec
+  // defines a real origin for. Any other scheme (e.g. mcp://) parses to an
+  // opaque origin, which URL.prototype.origin serializes as the literal
+  // string "null". That's not a reason to skip stripping too: `protocol`,
+  // `host`, and `pathname` all populate correctly for an opaque-origin URL
+  // (only `origin` collapses), so reconstructing from those three still
+  // strips the query/fragment this function exists to strip, without
+  // reintroducing a per-scheme allowlist. A producer declaring
+  // `mcp://tool/x?session=abc` would otherwise carry that query into the
+  // canonical, recreating the per-variant catalog duplication the
+  // stripping exists to prevent. See
+  // https://github.com/x402-foundation/x402/pull/3138#issuecomment-5273664506.
   const url = new URL(resourceUrl);
   // If a routeTemplate is present (dynamic route), use it as the canonical path
   const canonicalUrl =
     url.origin === "null"
-      ? resourceUrl
+      ? `${url.protocol}//${url.host}${url.pathname}`
       : routeTemplate
         ? `${url.origin}${routeTemplate}`
         : `${url.origin}${url.pathname}`;

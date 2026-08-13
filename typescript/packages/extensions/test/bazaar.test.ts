@@ -1714,6 +1714,42 @@ describe("Bazaar Discovery Extension", () => {
       expect(discovered!.resourceUrl).toBe("test-scheme://tool/financial_analysis");
       expect(discovered!.resourceUrl).not.toContain("null");
     });
+
+    it("should strip query params from an opaque-origin resource URL", () => {
+      // The gap whawk46 flagged on #3138: the opaque-origin branch above
+      // used the raw resourceUrl verbatim, so a query string survived into
+      // the canonical instead of being stripped like every special-scheme
+      // canonical already strips it. `mcp://tool/x?session=abc` recreates
+      // the per-variant catalog duplication the stripping exists to
+      // prevent unless it's stripped here too.
+      const declared = declareDiscoveryExtension({
+        toolName: "financial_analysis",
+        description: "Analyze financial data",
+        inputSchema: {
+          type: "object",
+          properties: { ticker: { type: "string" } },
+        },
+      });
+
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: "exact",
+        network: "eip155:8453" as unknown,
+        payload: {},
+        accepted: {} as unknown,
+        resource: { url: "mcp://tool/financial_analysis?session=abc" },
+        extensions: {
+          [BAZAAR.key]: declared.bazaar,
+        },
+      };
+
+      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+
+      expect(discovered).not.toBeNull();
+      expect(discovered!.resourceUrl).toBe("mcp://tool/financial_analysis");
+      expect(discovered!.resourceUrl).not.toContain("session");
+      expect(discovered!.resourceUrl).not.toContain("?");
+    });
   });
 
   describe("validateAndExtract - MCP", () => {
