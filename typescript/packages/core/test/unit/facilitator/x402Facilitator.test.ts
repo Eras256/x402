@@ -565,5 +565,67 @@ describe("x402Facilitator", () => {
       expect(exactFacilitator.verifyCalls.length).toBe(1);
       expect(patternFacilitator.verifyCalls.length).toBe(0);
     });
+
+    it("advertises each network once in getSupported() for a mixed-namespace registration", async () => {
+      // Regression for the bug reported on #3215: registering one
+      // facilitator across two CAIP-2 namespaces (stellar + eip155) in a
+      // single call used to store the full, mixed-namespace network set on
+      // BOTH per-namespace SchemeData entries, so getSupported() walked
+      // every network once per namespace entry and advertised it twice (or
+      // once per namespace involved, generally).
+      class MultiFamilyFacilitator implements SchemeNetworkFacilitator {
+        readonly scheme = "exact";
+        readonly caipFamily = "mixed:*";
+
+        getExtra(): undefined {
+          return undefined;
+        }
+
+        getSigners(): string[] {
+          return ["0xSigner"];
+        }
+
+        async verify(): Promise<VerifyResponse> {
+          return { isValid: true };
+        }
+
+        async settle(): Promise<SettleResponse> {
+          return { success: true, transaction: "0xTestTx", network: "test:network" };
+        }
+      }
+
+      const facilitator = new x402Facilitator();
+      const mixedFacilitator = new MultiFamilyFacilitator();
+
+      facilitator.register(
+        ["stellar:testnet", "stellar:pubnet", "eip155:8453"] as Network[],
+        mixedFacilitator,
+      );
+
+      const { kinds } = facilitator.getSupported();
+
+      expect(kinds).toHaveLength(3);
+      const networksSeen = kinds.map(kind => kind.network);
+      expect(new Set(networksSeen).size).toBe(3);
+      expect(networksSeen.sort()).toEqual(["eip155:8453", "stellar:pubnet", "stellar:testnet"]);
+
+      // Exact match must still resolve correctly for both namespaces: each
+      // network is only ever stored on its own namespace's entry now, not
+      // duplicated across namespace entries like the shared `networks` set
+      // used to.
+      const stellarPayload = buildPaymentPayload({ x402Version: 2 });
+      const stellarRequirements = buildPaymentRequirements({
+        scheme: "exact",
+        network: "stellar:testnet" as Network,
+      });
+      await facilitator.verify(stellarPayload, stellarRequirements);
+
+      const evmPayload = buildPaymentPayload({ x402Version: 2 });
+      const evmRequirements = buildPaymentRequirements({
+        scheme: "exact",
+        network: "eip155:8453" as Network,
+      });
+      await facilitator.verify(evmPayload, evmRequirements);
+    });
   });
 });

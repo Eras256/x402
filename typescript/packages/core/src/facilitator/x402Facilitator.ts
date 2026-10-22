@@ -529,11 +529,13 @@ export class x402Facilitator {
     // namespace it actually covers, not a single pattern collapsed onto
     // the first network's namespace, which previously provided no
     // wildcard coverage in ANY namespace involved: it just duplicated the
-    // exact-match Set's own coverage of that one network. `networks`
-    // stays the SAME full set on every entry, so exact matching (checked
-    // first in verify()/settle()'s dispatch loop, before pattern
-    // matching) is unaffected either way; only the wildcard fallback
-    // needed to become namespace-scoped.
+    // exact-match Set's own coverage of that one network. Each entry's
+    // `networks` is scoped to its OWN namespace's networks (not the full,
+    // possibly mixed-namespace set): every network is still found in its
+    // own namespace's entry, so exact matching (checked first in
+    // verify()/settle()'s dispatch loop, before pattern matching) stays
+    // correct, and getSupported() no longer walks the same network once
+    // per namespace entry and advertises duplicate kinds for it.
     const networksByNamespace = new Map<string, Network[]>();
     for (const network of networks) {
       const namespace = network.split(":")[0];
@@ -545,11 +547,10 @@ export class x402Facilitator {
       }
     }
 
-    const fullNetworkSet = new Set(networks);
     for (const namespaceNetworks of networksByNamespace.values()) {
       schemeDataArray.push({
         facilitator,
-        networks: fullNetworkSet,
+        networks: new Set(namespaceNetworks),
         pattern: this.derivePattern(namespaceNetworks),
       });
     }
