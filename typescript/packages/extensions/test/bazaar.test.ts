@@ -1750,6 +1750,42 @@ describe("Bazaar Discovery Extension", () => {
       expect(discovered!.resourceUrl).not.toContain("session");
       expect(discovered!.resourceUrl).not.toContain("?");
     });
+
+    it("should use routeTemplate for an opaque-origin resource URL", () => {
+      // Requested in review on #3138: the opaque-origin branch must not
+      // ignore routeTemplate, or each concrete path variant is catalogued
+      // separately, which is the duplication the template exists to prevent.
+      const declared = declareDiscoveryExtension({
+        input: {},
+        inputSchema: { properties: {} },
+      });
+      const extension = declared.bazaar;
+      const enrichedExtension = {
+        ...extension,
+        routeTemplate: "/users/:userId",
+        info: {
+          ...extension.info,
+          input: { ...extension.info.input, pathParams: { userId: "123" } },
+        },
+      };
+
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: "exact",
+        network: "eip155:8453" as unknown,
+        payload: {},
+        accepted: {} as unknown,
+        resource: { url: "mcp://tool/users/123?session=abc" },
+        extensions: {
+          [BAZAAR.key]: enrichedExtension,
+        },
+      };
+
+      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown, false);
+
+      expect(discovered).not.toBeNull();
+      expect(discovered!.resourceUrl).toBe("mcp://tool/users/:userId");
+    });
   });
 
   describe("validateAndExtract - MCP", () => {

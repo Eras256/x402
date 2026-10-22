@@ -588,13 +588,10 @@ export function extractDiscoveryInfo(
   // stripping exists to prevent. See
   // https://github.com/x402-foundation/x402/pull/3138#issuecomment-5273664506.
   const url = new URL(resourceUrl);
-  // If a routeTemplate is present (dynamic route), use it as the canonical path
-  const canonicalUrl =
-    url.origin === "null"
-      ? `${url.protocol}//${url.host}${url.pathname}`
-      : routeTemplate
-        ? `${url.origin}${routeTemplate}`
-        : `${url.origin}${url.pathname}`;
+  const originBase = url.origin === "null" ? `${url.protocol}//${url.host}` : url.origin;
+  // If a routeTemplate is present (dynamic route), use it as the canonical path,
+  // for opaque origins too, so each concrete variant is not catalogued separately.
+  const canonicalUrl = `${originBase}${routeTemplate ?? url.pathname}`;
 
   // Extract description and mimeType from resource info (v2) or requirements (v1)
   let description: string | undefined;
