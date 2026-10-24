@@ -1655,29 +1655,31 @@ describe("Bazaar Discovery Extension", () => {
     // allowlist), so this pins the general rule with two independent
     // schemes, not just mcp://, to catch the next undocumented scheme
     // before it regresses the same way.
+    const declared = declareDiscoveryExtension({
+      toolName: "financial_analysis",
+      description: "Analyze financial data",
+      inputSchema: {
+        type: "object",
+        properties: { ticker: { type: "string" } },
+      },
+    });
+    const buildPayload = (url: string) => ({
+      x402Version: 2,
+      scheme: "exact",
+      network: "eip155:8453" as unknown,
+      payload: {},
+      accepted: {} as unknown,
+      resource: { url },
+      extensions: {
+        [BAZAAR.key]: declared.bazaar,
+      },
+    });
+
     it("should use the raw resource URL as canonical for mcp:// (opaque origin)", () => {
-      const declared = declareDiscoveryExtension({
-        toolName: "financial_analysis",
-        description: "Analyze financial data",
-        inputSchema: {
-          type: "object",
-          properties: { ticker: { type: "string" } },
-        },
-      });
-
-      const paymentPayload = {
-        x402Version: 2,
-        scheme: "exact",
-        network: "eip155:8453" as unknown,
-        payload: {},
-        accepted: {} as unknown,
-        resource: { url: "mcp://tool/financial_analysis" },
-        extensions: {
-          [BAZAAR.key]: declared.bazaar,
-        },
-      };
-
-      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+      const discovered = extractDiscoveryInfo(
+        buildPayload("mcp://tool/financial_analysis"),
+        {} as unknown,
+      );
 
       expect(discovered).not.toBeNull();
       expect(discovered!.resourceUrl).toBe("mcp://tool/financial_analysis");
@@ -1687,28 +1689,10 @@ describe("Bazaar Discovery Extension", () => {
     it("should use the raw resource URL as canonical for an arbitrary non-special scheme (opaque origin)", () => {
       // Not mcp:// — a made-up scheme this package has never heard of, to
       // prove the fix doesn't special-case mcp specifically.
-      const declared = declareDiscoveryExtension({
-        toolName: "financial_analysis",
-        description: "Analyze financial data",
-        inputSchema: {
-          type: "object",
-          properties: { ticker: { type: "string" } },
-        },
-      });
-
-      const paymentPayload = {
-        x402Version: 2,
-        scheme: "exact",
-        network: "eip155:8453" as unknown,
-        payload: {},
-        accepted: {} as unknown,
-        resource: { url: "test-scheme://tool/financial_analysis" },
-        extensions: {
-          [BAZAAR.key]: declared.bazaar,
-        },
-      };
-
-      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+      const discovered = extractDiscoveryInfo(
+        buildPayload("test-scheme://tool/financial_analysis"),
+        {} as unknown,
+      );
 
       expect(discovered).not.toBeNull();
       expect(discovered!.resourceUrl).toBe("test-scheme://tool/financial_analysis");
@@ -1722,28 +1706,10 @@ describe("Bazaar Discovery Extension", () => {
       // canonical already strips it. `mcp://tool/x?session=abc` recreates
       // the per-variant catalog duplication the stripping exists to
       // prevent unless it's stripped here too.
-      const declared = declareDiscoveryExtension({
-        toolName: "financial_analysis",
-        description: "Analyze financial data",
-        inputSchema: {
-          type: "object",
-          properties: { ticker: { type: "string" } },
-        },
-      });
-
-      const paymentPayload = {
-        x402Version: 2,
-        scheme: "exact",
-        network: "eip155:8453" as unknown,
-        payload: {},
-        accepted: {} as unknown,
-        resource: { url: "mcp://tool/financial_analysis?session=abc" },
-        extensions: {
-          [BAZAAR.key]: declared.bazaar,
-        },
-      };
-
-      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown);
+      const discovered = extractDiscoveryInfo(
+        buildPayload("mcp://tool/financial_analysis?session=abc"),
+        {} as unknown,
+      );
 
       expect(discovered).not.toBeNull();
       expect(discovered!.resourceUrl).toBe("mcp://tool/financial_analysis");
@@ -1755,11 +1721,10 @@ describe("Bazaar Discovery Extension", () => {
       // Requested in review on #3138: the opaque-origin branch must not
       // ignore routeTemplate, or each concrete path variant is catalogued
       // separately, which is the duplication the template exists to prevent.
-      const declared = declareDiscoveryExtension({
+      const extension = declareDiscoveryExtension({
         input: {},
         inputSchema: { properties: {} },
-      });
-      const extension = declared.bazaar;
+      }).bazaar;
       const enrichedExtension = {
         ...extension,
         routeTemplate: "/users/:userId",
@@ -1769,19 +1734,21 @@ describe("Bazaar Discovery Extension", () => {
         },
       };
 
-      const paymentPayload = {
-        x402Version: 2,
-        scheme: "exact",
-        network: "eip155:8453" as unknown,
-        payload: {},
-        accepted: {} as unknown,
-        resource: { url: "mcp://tool/users/123?session=abc" },
-        extensions: {
-          [BAZAAR.key]: enrichedExtension,
+      const discovered = extractDiscoveryInfo(
+        {
+          x402Version: 2,
+          scheme: "exact",
+          network: "eip155:8453" as unknown,
+          payload: {},
+          accepted: {} as unknown,
+          resource: { url: "mcp://tool/users/123?session=abc" },
+          extensions: {
+            [BAZAAR.key]: enrichedExtension,
+          },
         },
-      };
-
-      const discovered = extractDiscoveryInfo(paymentPayload, {} as unknown, false);
+        {} as unknown,
+        false,
+      );
 
       expect(discovered).not.toBeNull();
       expect(discovered!.resourceUrl).toBe("mcp://tool/users/:userId");
